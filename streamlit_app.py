@@ -13,12 +13,18 @@ st.set_page_config(
 )
 
 MAX_RESULTS_LIMIT = 200
-# ⭐️ 새로운 기능: 매칭 정확도를 높이기 위해 유사도 기준을 85점으로 상향
 MATCH_SCORE_THRESHOLD = 85
+
+TOP_JOURNALS = {
+    "Nature", "Science", "Cell", "The Lancet", "New England Journal of Medicine",
+    "CA - A Cancer Journal for Clinicians", "Nature Reviews Molecular Cell Biology",
+    "Nature Medicine", "The Lancet Neurology", "JAMA - Journal of the American Medical Association"
+}
 
 # --- 2. 핵심 함수 (데이터 로딩, 매칭, 스타일링) ---
 @st.cache_data
 def load_journal_db(file_path='journal_if_data.csv'):
+    # ... (이전과 동일, 변경 없음)
     if not os.path.exists(file_path): return None, None
     try:
         df = pd.read_csv(file_path)
@@ -28,24 +34,20 @@ def load_journal_db(file_path='journal_if_data.csv'):
         st.error(f"데이터 파일({file_path}) 로드 오류: {e}")
         return None, None
 
-# ⭐️ 새로운 기능: 이제 SJR 점수, 매칭된 전체 이름, 매칭 점수를 모두 반환합니다.
 @st.cache_data
 def get_journal_info(venue, db_df, journal_names_list):
-    """유사도 매칭으로 SJR 점수, 저널 전체 이름, 매칭 점수를 찾습니다."""
+    # ... (이전과 동일, 변경 없음)
     if not venue or db_df is None or not journal_names_list:
         return "N/A", "N/A", 0
-    
     match, score = process.extractOne(venue, journal_names_list, scorer=fuzz.token_sort_ratio)
-    
-    # 설정된 임계값 이상일 때만 유효한 매칭으로 간주
     if score >= MATCH_SCORE_THRESHOLD:
         sjr_value = db_df.loc[db_df['FullName'] == match, 'ImpactFactor'].iloc[0]
         return f"{sjr_value:.3f}", match, score
     else:
-        # 매칭 실패 시, 점수와 함께 실패했다는 정보 반환
         return "N/A", "매칭 실패", score
 
 def classify_sjr(sjr_score_str):
+    # ... (이전과 동일, 변경 없음)
     if sjr_score_str == "N/A": return "N/A"
     try:
         score = float(sjr_score_str)
@@ -56,6 +58,7 @@ def classify_sjr(sjr_score_str):
     except (ValueError, TypeError): return "N/A"
 
 def color_sjr_score(val):
+    # ... (이전과 동일, 변경 없음)
     try:
         score = float(val)
         if score >= 1.0: color = 'green'
@@ -72,7 +75,7 @@ def convert_df_to_csv(df: pd.DataFrame):
 
 # --- 3. UI 본문 구성 ---
 st.title("📚 논문 검색 및 정보 다운로더")
-st.markdown(f"Google Scholar에서 논문을 검색하고, SJR 지표를 조회합니다. (안정성을 위해 최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
+st.markdown(f"Google Scholar에서 논문을 검색하고, SJR 지표를 함께 조회합니다. (최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
 
 db_df, journal_names = load_journal_db()
 if db_df is None:
@@ -82,9 +85,9 @@ else:
     
     with st.expander("💡 결과 테이블 해석 가이드 보기"):
         st.markdown(f"""
+        - **🏆 Top 저널**: Nature, Science 등 세계 최상위 저널을 특별히 표시합니다.
         - **매칭 점수**: Google Scholar의 축약된 저널명과 DB의 전체 저널명 간의 유사도입니다.
         - **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 SJR 점수를 표시하여 정확도를 높였습니다.
-        - 점수가 낮아 매칭에 실패하면 '...'으로 표시될 수 있습니다.
         """)
 
     with st.form(key='search_form'):
@@ -94,6 +97,10 @@ else:
             author = st.text_input("저자 (선택 사항)", placeholder="예: Hinton G")
         with col2:
             keyword = st.text_input("키워드 (선택 사항)", placeholder="예: deep learning")
+        
+        # ⭐️ 새로운 기능: High Impact 저널 필터링 체크박스
+        only_high_impact = st.checkbox("High Impact 저널만 찾기 (DB에서 매칭되는 저널만 표시)", value=True)
+        
         submit_button = st.form_submit_button(label='검색 시작')
 
     if submit_button and (author or keyword):
@@ -113,11 +120,17 @@ else:
                     
                     bib = pub.get('bib', {})
                     venue = bib.get('venue', 'N/A')
-                    
-                    # ⭐️ 새로운 기능: 점수, 전체이름, 매칭점수를 모두 받아옴
                     sjr_score, matched_name, match_score = get_journal_info(venue, db_df, journal_names)
                     
+                    # ⭐️ 새로운 기능: 필터링 로직
+                    # 체크박스가 선택되었고, SJR 점수를 찾지 못했다면(매칭 실패) 건너뛴다.
+                    if only_high_impact and sjr_score == "N/A":
+                        continue
+                    
+                    top_journal_icon = "🏆" if matched_name in TOP_JOURNALS else ""
+                    
                     results.append({
+                        "Top 저널": top_journal_icon,
                         "제목 (Title)": bib.get('title', 'N/A'),
                         "저자 (Authors)": ", ".join(bib.get('author', ['N/A'])),
                         "연도 (Year)": bib.get('pub_year', 'N/A'),
@@ -130,16 +143,20 @@ else:
                     })
 
                 if not results:
-                    st.warning("검색된 논문이 없습니다.")
+                    st.warning("조건에 맞는 논문이 없습니다. (필터를 해제하거나 다른 키워드를 시도해보세요)")
                 else:
-                    st.subheader(f"📊 검색 결과 ({len(results)}개)")
+                    # ⭐️ 새로운 기능: 필터링 여부에 따라 동적으로 제목 변경
+                    subheader_text = f"📊 검색 결과 ({len(results)}개)"
+                    if only_high_impact:
+                        subheader_text += " - High Impact 저널만 필터링됨"
+                    st.subheader(subheader_text)
+
                     df = pd.DataFrame(results)
                     df['SJR 등급'] = df['저널 SJR'].apply(classify_sjr)
-                    # ⭐️ 새로운 기능: 투명성을 위해 모든 컬럼을 표시하도록 순서 재배치
                     df = df[[
-                        "제목 (Title)", "저자 (Authors)", "연도 (Year)", 
-                        "검색된 저널명 (축약)", "매칭된 저널명 (전체)", "매칭 점수 (%)", 
-                        "저널 SJR", "SJR 등급", "피인용 수", "논문 링크"
+                        "Top 저널", "제목 (Title)", "저자 (Authors)", "연도 (Year)", 
+                        "매칭된 저널명 (전체)", "저널 SJR", "SJR 등급", 
+                        "피인용 수", "매칭 점수 (%)", "검색된 저널명 (축약)", "논문 링크"
                     ]]
                     
                     st.dataframe(
