@@ -15,12 +15,12 @@ st.set_page_config(
 )
 
 # ----------------------------------
-# Semantic Scholar API 연동 함수 (수정된 버전)
+# Semantic Scholar API 연동 함수
 # ----------------------------------
 @st.cache_data(ttl=3600)
 def get_journal_info_from_s2(journal_name: str):
     """
-    Semantic Scholar (S2) API를 사용하여 저널 정보를 조회합니다. (수정된 버전)
+    Semantic Scholar (S2) API를 사용하여 저널 정보를 조회합니다.
     :param journal_name: Google Scholar에서 가져온 저널 이름
     :return: (영향력 점수, 홈페이지 URL, S2에서 찾은 저널명) 튜플
     """
@@ -28,10 +28,6 @@ def get_journal_info_from_s2(journal_name: str):
         return "N/A", "#", "N/A"
 
     try:
-        # S2의 저널 검색 API 엔드포인트와 공식 필드 사용
-        # influenceScore: S2의 영향력 점수
-        # homepage: 저널 홈페이지
-        # journalName: API가 찾은 저널의 공식 이름
         response = requests.get(
             "https://api.semanticscholar.org/graph/v1/journal/search",
             params={"query": journal_name, "fields": "journalName,homepage,influenceScore"},
@@ -41,14 +37,11 @@ def get_journal_info_from_s2(journal_name: str):
         response.raise_for_status()
         data = response.json()
 
-        # 데이터가 있고, 결과 목록이 비어있지 않은지 확인
         if data.get("total", 0) > 0 and data.get("data"):
-            journal_data = data["data"][0]  # 가장 관련성 높은 첫 번째 결과 사용
+            journal_data = data["data"][0]
             
-            # influenceScore 추출 및 소수점 2자리로 반올림
             influence_score = journal_data.get("influenceScore")
             if influence_score is not None:
-                # influence_score가 숫자일 경우에만 반올림
                 try:
                     score_str = f"{float(influence_score):.2f}"
                 except (ValueError, TypeError):
@@ -59,7 +52,6 @@ def get_journal_info_from_s2(journal_name: str):
             homepage = journal_data.get("homepage", "#")
             s2_journal_name = journal_data.get("journalName", "N/A")
 
-            # 값이 없는 경우 처리
             if homepage is None: homepage = "#"
             if s2_journal_name is None: s2_journal_name = "N/A"
 
@@ -68,7 +60,6 @@ def get_journal_info_from_s2(journal_name: str):
             return "N/A", "#", "결과 없음"
             
     except requests.exceptions.RequestException as e:
-        # st.error(f"API 요청 오류: {e}") # 디버깅 시에만 활성화
         print(f"API Error for '{journal_name}': {e}")
         return "API 오류", "#", "N/A"
     except Exception as e:
@@ -76,7 +67,7 @@ def get_journal_info_from_s2(journal_name: str):
         return "데이터 오류", "#", "N/A"
 
 # ----------------------------------
-# 데이터 변환 함수 (기존과 동일)
+# 데이터 변환 함수
 # ----------------------------------
 @st.cache_data
 def to_excel(df: pd.DataFrame):
@@ -119,7 +110,6 @@ if submit_button and keyword:
                 bib = pub.get('bib', {})
                 venue = bib.get('venue', 'N/A')
                 
-                # API 호출 및 결과 unpacking
                 influence_score, journal_homepage, s2_name = get_journal_info_from_s2(venue)
                 
                 results.append({
@@ -131,7 +121,7 @@ if submit_button and keyword:
                     "피인용 수 (Citations)": pub.get('num_citations', 0),
                     "논문 링크": pub.get('pub_url', '#'),
                     "저널 홈페이지": journal_homepage,
-                    "S2 저널명": s2_name, # 디버깅 및 정보 확인용 컬럼
+                    "S2 저널명": s2_name,
                 })
 
                 progress_percentage = (i + 1) / num_results
@@ -157,9 +147,21 @@ if submit_button and keyword:
                 st.subheader("📥 파일 다운로드")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.download_button("📄 CSV 파일로 다운로드", to_csv(df), f's2_scholar_results_{keyword.replace(" ", "_")}.csv", 'text/csv')
+                    # --- 오타 수정된 부분 ---
+                    st.download_button(
+                        label="📄 CSV 파일로 다운로드",
+                        data=to_csv(df),
+                        file_name=f's2_scholar_results_{keyword.replace(" ", "_")}.csv',
+                        mime='text/csv'
+                    )
                 with col2:
-                    st.download_button("📊 Excel 파일로 다운로드", to_excel(df), f's2_scholar_results_{keyword.replace(" ", "_")}.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                    # --- 오타 수정된 부분 ---
+                    st.download_button(
+                        label="📊 Excel 파일로 다운로드",
+                        data=to_excel(df),
+                        file_name=f's2_scholar_results_{keyword.replace(" ", "_")}.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
 
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
