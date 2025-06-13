@@ -1,4 +1,9 @@
 streamlit
 pandas
 scholarly
-openpyxl  # Excel 파일 생성을 위해 필요
+openpyxl
+thefuzz
+python-levenshtein
+requests
+beautifulsoup4
+tqdm
