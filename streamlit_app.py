@@ -2,150 +2,131 @@ import streamlit as st
 import pandas as pd
 from scholarly import scholarly
 import io
-import requests
-from bs4 import BeautifulSoup
-import re
+import google.generativeai as genai
 import time
+import re
 
-# ----------------------------------
-# 페이지 설정
-# ----------------------------------
+# --- 1. 페이지 설정 및 API 키 구성 ---
 st.set_page_config(
-    page_title="논문 검색기 (Google IF 스크레이퍼)",
-    page_icon="🧪",
-    layout="wide",
+    page_title="AI 논문 검색기",
+    page_icon="🔬",
+    layout="centered", # 더 집중되고 심플한 UI를 위해 centered 레이아웃 사용
 )
 
-# ----------------------------------
-# Google 검색 스크레이핑 함수
-# ----------------------------------
-@st.cache_data(ttl=3600)  # 결과를 1시간 동안 캐시
-def get_if_from_google_search(journal_name: str):
+# Streamlit Secrets에서 Gemini API 키 가져오기
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=GEMINI_API_KEY)
+except (KeyError, FileNotFoundError):
+    st.error("🚨 Gemini API 키를 찾을 수 없습니다.")
+    st.info("Streamlit Cloud의 'Settings > Secrets'에 `GEMINI_API_KEY = '당신의API키'` 형식으로 API 키를 추가해주세요.")
+    st.stop()
+
+# --- 2. 핵심 함수: Gemini API 호출 ---
+@st.cache_data(ttl=3600) # 1시간 동안 API 응답 캐싱
+def get_if_from_gemini(journal_name: str):
     """
-    Google 검색을 통해 저널의 Impact Factor를 스크레이핑합니다.
-    **매우 불안정하며 실험적인 기능입니다.**
+    Gemini 1.5 Flash 모델을 사용하여 저널의 IF를 '추정'합니다.
     """
     if not journal_name:
         return "N/A"
-
+    
+    # 매우 구체적이고 간결한 응답을 유도하는 프롬프트
+    prompt = f"""
+    What is the most recent official Journal Impact Factor for the journal: "{journal_name}"?
+    Respond with ONLY the number (e.g., '42.778') or 'N/A' if you cannot find it. 
+    Do not add any other text, explanation, or sentences.
+    """
+    
     try:
-        # 검색어 생성 (저널 이름과 "impact factor"를 함께 검색)
-        query = f'"{journal_name}" journal impact factor'
-        url = f"https://www.google.com/search?q={query}"
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        response = model.generate_content(prompt)
         
-        # Google 차단을 피하기 위한 User-Agent 설정
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        # Google이 요청을 차단했는지 확인 (응답 내용으로 판단)
-        if "Our systems have detected unusual traffic" in response.text:
-            return "Scraping Blocked"
-        
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        # 페이지 전체 텍스트에서 IF 패턴 검색
-        page_text = soup.get_text()
-        
-        # 정규표현식으로 "Impact Factor: 12.345" 와 같은 패턴 찾기
-        # (?: ... ) 는 non-capturing group 입니다.
-        pattern = r"(?:impact factor|if)\s*[:\-]?\s*(\d{1,3}\.\d{1,3})"
-        match = re.search(pattern, page_text, re.IGNORECASE)
+        # AI 응답에서 숫자만 정확히 추출하기 위한 정규표현식
+        text_response = response.text.strip()
+        match = re.search(r'(\d{1,3}(?:\.\d{1,3})?)', text_response)
         
         if match:
-            return match.group(1) # 첫 번째 캡처 그룹 (숫자 부분) 반환
+            return match.group(1)
+        # 숫자를 찾지 못하면, AI의 응답을 그대로 보여주되 길이를 제한
+        elif text_response:
+             return text_response if len(text_response) < 15 else "AI 응답 없음"
         else:
-            return "Not Found"
+            return "N/A"
 
-    except requests.exceptions.RequestException:
-        return "Network Error"
-    except Exception:
-        return "Parsing Error"
+    except Exception as e:
+        print(f"Gemini API Error for '{journal_name}': {e}")
+        return "API 오류"
 
-# ----------------------------------
-# 데이터 변환 함수
-# ----------------------------------
+
+# --- 3. 데이터 변환 함수 ---
 @st.cache_data
-def to_excel(df: pd.DataFrame):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
-    return output.getvalue()
-
-@st.cache_data
-def to_csv(df: pd.DataFrame):
+def convert_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-
-# ----------------------------------
-# Streamlit 앱 UI 구성
-# ----------------------------------
-st.title("🧪 논문 검색기 (실험적 IF 스크레이퍼)")
+# --- 4. UI 본문 구성 ---
+st.title("🔬 AI 기반 논문 검색기")
 st.warning(
-    "**[중요] 안내:** 이 앱은 **Google 검색**을 통해 저널의 Impact Factor를 **실시간으로 추정**합니다. "
-    "이 방법은 아래와 같은 한계가 있습니다.\n"
-    "1. Google의 정책에 의해 **검색이 자주 차단**될 수 있습니다. ('Scraping Blocked' 오류)\n"
-    "2. 표시되는 수치는 **정확하지 않거나 오래된 정보**일 수 있습니다.\n"
-    "3. 검색 속도가 매우 느립니다."
+    "**[안내]** 이 앱은 **Google Gemini AI**를 사용하여 저널의 Impact Factor를 **실시간으로 추정**합니다. "
+    "AI가 생성하는 정보이므로 **부정확할 수 있으며, 참고용으로만 사용**해주세요."
 )
 
 with st.form(key='search_form'):
-    keyword = st.text_input("**👉 검색어(Keyword)를 입력하세요**", placeholder="예: nature machine intelligence")
-    num_results = st.number_input("**👉 검색할 논문 수를 선택하세요**", min_value=1, max_value=10, value=5, step=1,
-                                  help="속도와 차단 방지를 위해 한 번에 최대 10개까지 가능합니다.")
-    submit_button = st.form_submit_button(label='🔍 검색 시작')
+    keyword = st.text_input("검색할 키워드를 입력하세요", placeholder="예: artificial intelligence in medicine")
+    num_results = st.slider("가져올 논문 수", min_value=1, max_value=15, value=5, 
+                            help="API 호출 비용과 속도를 위해 최대 15개까지 가능합니다.")
+    submit_button = st.form_submit_button(label='🚀 검색 시작')
 
 if submit_button and keyword:
-    with st.spinner(f"논문 검색 및 Google에서 IF 추정 중... (매우 느릴 수 있습니다)"):
+    with st.spinner(f"'{keyword}' 논문 검색 및 AI로 IF 추정 중..."):
         try:
             search_query = scholarly.search_pubs(keyword)
             results = []
+
+            # 진행 상태 바
+            progress_bar = st.progress(0)
             
             for i, pub in enumerate(search_query):
                 if i >= num_results: break
                 
-                # Google 검색 요청 사이에 충분한 시간 간격 주기
+                # Gemini API의 분당 요청 제한(rate limit)을 존중하기 위한 지연
                 time.sleep(1) 
                 
                 bib = pub.get('bib', {})
                 venue = bib.get('venue', 'N/A')
-                # Google Scholar가 제공하는 저널명은 '...'으로 축약되는 경우가 많음
-                # 예: 'Nature Machine Intelligence' -> 'Nat. Mach. Intell.'
-                # 이는 정확한 검색을 방해할 수 있음
                 
-                impact_factor = get_if_from_google_search(venue)
+                impact_factor = get_if_from_gemini(venue)
                 
                 results.append({
                     "제목 (Title)": bib.get('title', 'N/A'),
                     "저자 (Authors)": ", ".join(bib.get('author', ['N/A'])),
                     "연도 (Year)": bib.get('pub_year', 'N/A'),
-                    "저널/출판물 (Venue)": venue,
-                    "IF 추정치 (Google)": impact_factor,
-                    "피인용 수 (Citations)": pub.get('num_citations', 0),
+                    "저널 (Venue)": venue,
+                    "IF 추정치 (AI)": impact_factor,
+                    "피인용 수": pub.get('num_citations', 0),
                     "논문 링크": pub.get('pub_url', '#'),
                 })
+                # 진행 상태 업데이트
+                progress_bar.progress((i + 1) / num_results)
 
-            df = pd.DataFrame(results)
-            st.success(f"총 {len(df)}개의 검색 결과를 찾았습니다.")
-            st.dataframe(
-                df, use_container_width=True,
-                column_config={"논문 링크": st.column_config.LinkColumn("바로가기")},
-                hide_index=True)
-            
-            st.markdown("---")
-            st.subheader("📥 파일 다운로드")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button("📄 CSV 다운로드", to_csv(df), f'google_if_{keyword.replace(" ", "_")}.csv', 'text/csv')
-            with col2:
-                st.download_button("📊 Excel 다운로드", to_excel(df), f'google_if_{keyword.replace(" ", "_")}.xlsx')
+            if not results:
+                st.warning("검색된 논문이 없습니다. 다른 키워드를 시도해보세요.")
+            else:
+                st.success("✅ 검색 및 AI 추정 완료!")
+                df = pd.DataFrame(results)
+                
+                st.dataframe(
+                    df, use_container_width=True,
+                    column_config={"논문 링크": st.column_config.LinkColumn("Link", display_text="🔗")},
+                    hide_index=True)
+                
+                st.download_button(
+                    label="📄 결과 CSV 파일로 다운로드",
+                    data=convert_to_csv(df),
+                    file_name=f'ai_if_search_{keyword.replace(" ", "_")}.csv',
+                    mime='text/csv'
+                )
 
         except Exception as e:
-            st.error(f"검색 중 심각한 오류가 발생했습니다: {e}")
-            st.info("Google Scholar의 요청이 차단되었을 수 있습니다. 잠시 후 다시 시도해주세요.")
-
-elif submit_button and not keyword:
-    st.warning("검색어를 입력해주세요.")
+            st.error(f"검색 중 오류가 발생했습니다: {e}")
+            st.info("Google Scholar 또는 Gemini API의 요청이 일시적으로 차단되었을 수 있습니다.")
