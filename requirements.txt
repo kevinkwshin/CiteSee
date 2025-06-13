@@ -3,3 +3,4 @@ pandas
 scholarly
 openpyxl
 requests
+beautifulsoup4
