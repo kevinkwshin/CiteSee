@@ -13,12 +13,13 @@ st.set_page_config(
 )
 
 MAX_RESULTS_LIMIT = 200
+# ⭐️ 새로운 기능: 매칭 정확도를 높이기 위해 유사도 기준을 85점으로 상향
+MATCH_SCORE_THRESHOLD = 85
 
 # --- 2. 핵심 함수 (데이터 로딩, 매칭, 스타일링) ---
 @st.cache_data
 def load_journal_db(file_path='journal_if_data.csv'):
-    if not os.path.exists(file_path):
-        return None, None
+    if not os.path.exists(file_path): return None, None
     try:
         df = pd.read_csv(file_path)
         df.dropna(subset=['FullName', 'ImpactFactor'], inplace=True)
@@ -27,23 +28,22 @@ def load_journal_db(file_path='journal_if_data.csv'):
         st.error(f"데이터 파일({file_path}) 로드 오류: {e}")
         return None, None
 
-# ⭐️ 새로운 기능: 이제 SJR 점수와 '매칭된 전체 이름'을 함께 반환합니다.
+# ⭐️ 새로운 기능: 이제 SJR 점수, 매칭된 전체 이름, 매칭 점수를 모두 반환합니다.
 @st.cache_data
 def get_journal_info(venue, db_df, journal_names_list):
-    """유사도 매칭으로 SJR 점수와 저널의 전체 이름을 찾습니다."""
+    """유사도 매칭으로 SJR 점수, 저널 전체 이름, 매칭 점수를 찾습니다."""
     if not venue or db_df is None or not journal_names_list:
-        return "N/A", "N/A"
+        return "N/A", "N/A", 0
     
-    # 가장 유사한 저널 이름을 찾음 (유사도 80점 이상)
     match, score = process.extractOne(venue, journal_names_list, scorer=fuzz.token_sort_ratio)
     
-    if score >= 80:
+    # 설정된 임계값 이상일 때만 유효한 매칭으로 간주
+    if score >= MATCH_SCORE_THRESHOLD:
         sjr_value = db_df.loc[db_df['FullName'] == match, 'ImpactFactor'].iloc[0]
-        # (점수, 전체 이름) 튜플을 반환
-        return f"{sjr_value:.3f}", match
+        return f"{sjr_value:.3f}", match, score
     else:
-        # 매칭 실패 시, 원래의 축약된 이름이라도 보여주기 위해 venue 반환
-        return "N/A", venue
+        # 매칭 실패 시, 점수와 함께 실패했다는 정보 반환
+        return "N/A", "매칭 실패", score
 
 def classify_sjr(sjr_score_str):
     if sjr_score_str == "N/A": return "N/A"
@@ -72,7 +72,7 @@ def convert_df_to_csv(df: pd.DataFrame):
 
 # --- 3. UI 본문 구성 ---
 st.title("📚 논문 검색 및 정보 다운로더")
-st.markdown(f"Google Scholar에서 논문을 검색하고, SJR 지표를 함께 조회합니다. (안정성을 위해 최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
+st.markdown(f"Google Scholar에서 논문을 검색하고, SJR 지표를 조회합니다. (안정성을 위해 최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
 
 db_df, journal_names = load_journal_db()
 if db_df is None:
@@ -80,13 +80,12 @@ if db_df is None:
 else:
     st.success(f"✅ 총 {len(db_df):,}개의 저널 정보가 담긴 데이터베이스를 성공적으로 로드했습니다.")
     
-    with st.expander("💡 SJR 점수 해석 가이드 보기"):
-        st.markdown("""
-        - **<span style='color:green;'>1.0 이상</span>**: 우수 저널
-        - **<span style='color:blue;'>0.5 ~ 1.0</span>**: 양호 저널
-        - **<span style='color:orange;'>0.2 ~ 0.5</span>**: 보통 저널
-        - **<span style='color:red;'>0.2 미만</span>**: 하위 저널
-        """, unsafe_allow_html=True)
+    with st.expander("💡 결과 테이블 해석 가이드 보기"):
+        st.markdown(f"""
+        - **매칭 점수**: Google Scholar의 축약된 저널명과 DB의 전체 저널명 간의 유사도입니다.
+        - **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 SJR 점수를 표시하여 정확도를 높였습니다.
+        - 점수가 낮아 매칭에 실패하면 '...'으로 표시될 수 있습니다.
+        """)
 
     with st.form(key='search_form'):
         st.subheader("🔍 검색 조건 입력")
@@ -115,15 +114,16 @@ else:
                     bib = pub.get('bib', {})
                     venue = bib.get('venue', 'N/A')
                     
-                    # ⭐️ 새로운 기능: 이제 SJR 점수와 '전체 이름'을 함께 받아옴
-                    sjr_score, full_journal_name = get_journal_info(venue, db_df, journal_names)
+                    # ⭐️ 새로운 기능: 점수, 전체이름, 매칭점수를 모두 받아옴
+                    sjr_score, matched_name, match_score = get_journal_info(venue, db_df, journal_names)
                     
                     results.append({
                         "제목 (Title)": bib.get('title', 'N/A'),
                         "저자 (Authors)": ", ".join(bib.get('author', ['N/A'])),
                         "연도 (Year)": bib.get('pub_year', 'N/A'),
-                        # ⭐️ 새로운 기능: 축약된 venue 대신, 찾은 full_journal_name을 저장
-                        "저널명": full_journal_name,
+                        "검색된 저널명 (축약)": venue,
+                        "매칭된 저널명 (전체)": matched_name,
+                        "매칭 점수 (%)": match_score,
                         "저널 SJR": sjr_score,
                         "피인용 수": pub.get('num_citations', 0),
                         "논문 링크": pub.get('pub_url', '#'),
@@ -135,8 +135,12 @@ else:
                     st.subheader(f"📊 검색 결과 ({len(results)}개)")
                     df = pd.DataFrame(results)
                     df['SJR 등급'] = df['저널 SJR'].apply(classify_sjr)
-                    # ⭐️ 새로운 기능: 컬럼 순서에 '저널명' 포함
-                    df = df[["제목 (Title)", "저자 (Authors)", "연도 (Year)", "저널명", "저널 SJR", "SJR 등급", "피인용 수", "논문 링크"]]
+                    # ⭐️ 새로운 기능: 투명성을 위해 모든 컬럼을 표시하도록 순서 재배치
+                    df = df[[
+                        "제목 (Title)", "저자 (Authors)", "연도 (Year)", 
+                        "검색된 저널명 (축약)", "매칭된 저널명 (전체)", "매칭 점수 (%)", 
+                        "저널 SJR", "SJR 등급", "피인용 수", "논문 링크"
+                    ]]
                     
                     st.dataframe(
                         df.style.applymap(color_sjr_score, subset=['저널 SJR']),
