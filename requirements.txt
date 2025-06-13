@@ -1,2 +1,4 @@
 streamlit
-openai
+pandas
+scholarly
+openpyxl  # Excel 파일 생성을 위해 필요
