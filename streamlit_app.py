@@ -12,7 +12,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# ⭐️ 새로운 기능: 보이지 않는 안전장치 (최대 검색 결과 제한)
 MAX_RESULTS_LIMIT = 200
 
 # --- 2. 핵심 함수 (데이터 로딩, 매칭, 스타일링) ---
@@ -28,27 +27,33 @@ def load_journal_db(file_path='journal_if_data.csv'):
         st.error(f"데이터 파일({file_path}) 로드 오류: {e}")
         return None, None
 
+# ⭐️ 새로운 기능: 이제 SJR 점수와 '매칭된 전체 이름'을 함께 반환합니다.
 @st.cache_data
 def get_journal_info(venue, db_df, journal_names_list):
+    """유사도 매칭으로 SJR 점수와 저널의 전체 이름을 찾습니다."""
     if not venue or db_df is None or not journal_names_list:
-        return "N/A"
+        return "N/A", "N/A"
+    
+    # 가장 유사한 저널 이름을 찾음 (유사도 80점 이상)
     match, score = process.extractOne(venue, journal_names_list, scorer=fuzz.token_sort_ratio)
+    
     if score >= 80:
         sjr_value = db_df.loc[db_df['FullName'] == match, 'ImpactFactor'].iloc[0]
-        return f"{sjr_value:.3f}"
-    return "N/A"
+        # (점수, 전체 이름) 튜플을 반환
+        return f"{sjr_value:.3f}", match
+    else:
+        # 매칭 실패 시, 원래의 축약된 이름이라도 보여주기 위해 venue 반환
+        return "N/A", venue
 
 def classify_sjr(sjr_score_str):
-    if sjr_score_str == "N/A":
-        return "N/A"
+    if sjr_score_str == "N/A": return "N/A"
     try:
         score = float(sjr_score_str)
         if score >= 1.0: return "우수"
         elif 0.5 <= score < 1.0: return "양호"
         elif 0.2 <= score < 0.5: return "보통"
         else: return "하위"
-    except (ValueError, TypeError):
-        return "N/A"
+    except (ValueError, TypeError): return "N/A"
 
 def color_sjr_score(val):
     try:
@@ -58,8 +63,7 @@ def color_sjr_score(val):
         elif 0.2 <= score < 0.5: color = 'orange'
         else: color = 'red'
         return f'color: {color}; font-weight: bold;'
-    except (ValueError, TypeError):
-        return 'color: grey;'
+    except (ValueError, TypeError): return 'color: grey;'
 
 @st.cache_data
 def convert_df_to_csv(df: pd.DataFrame):
@@ -68,7 +72,6 @@ def convert_df_to_csv(df: pd.DataFrame):
 
 # --- 3. UI 본문 구성 ---
 st.title("📚 논문 검색 및 정보 다운로더")
-# ⭐️ 새로운 기능: UI 텍스트 수정
 st.markdown(f"Google Scholar에서 논문을 검색하고, SJR 지표를 함께 조회합니다. (안정성을 위해 최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
 
 db_df, journal_names = load_journal_db()
@@ -92,10 +95,6 @@ else:
             author = st.text_input("저자 (선택 사항)", placeholder="예: Hinton G")
         with col2:
             keyword = st.text_input("키워드 (선택 사항)", placeholder="예: deep learning")
-        
-        # ⭐️ 새로운 기능: 검색 개수 슬라이더 제거
-        # num_results = st.slider("가져올 논문 수", min_value=5, max_value=50, value=10)
-        
         submit_button = st.form_submit_button(label='검색 시작')
 
     if submit_button and (author or keyword):
@@ -109,20 +108,22 @@ else:
                 search_query = scholarly.search_pubs(query)
                 results = []
                 for i, pub in enumerate(search_query):
-                    # ⭐️ 새로운 기능: 내부적으로 설정된 최대 개수까지만 가져옴
                     if i >= MAX_RESULTS_LIMIT:
                         st.info(f"검색 결과가 많아 최대 {MAX_RESULTS_LIMIT}개까지만 표시합니다.")
                         break
                     
                     bib = pub.get('bib', {})
                     venue = bib.get('venue', 'N/A')
-                    sjr_score = get_journal_info(venue, db_df, journal_names)
+                    
+                    # ⭐️ 새로운 기능: 이제 SJR 점수와 '전체 이름'을 함께 받아옴
+                    sjr_score, full_journal_name = get_journal_info(venue, db_df, journal_names)
                     
                     results.append({
                         "제목 (Title)": bib.get('title', 'N/A'),
                         "저자 (Authors)": ", ".join(bib.get('author', ['N/A'])),
                         "연도 (Year)": bib.get('pub_year', 'N/A'),
-                        "저널 (Venue)": venue,
+                        # ⭐️ 새로운 기능: 축약된 venue 대신, 찾은 full_journal_name을 저장
+                        "저널명": full_journal_name,
                         "저널 SJR": sjr_score,
                         "피인용 수": pub.get('num_citations', 0),
                         "논문 링크": pub.get('pub_url', '#'),
@@ -134,7 +135,8 @@ else:
                     st.subheader(f"📊 검색 결과 ({len(results)}개)")
                     df = pd.DataFrame(results)
                     df['SJR 등급'] = df['저널 SJR'].apply(classify_sjr)
-                    df = df[["제목 (Title)", "저자 (Authors)", "연도 (Year)", "저널 (Venue)", "저널 SJR", "SJR 등급", "피인용 수", "논문 링크"]]
+                    # ⭐️ 새로운 기능: 컬럼 순서에 '저널명' 포함
+                    df = df[["제목 (Title)", "저자 (Authors)", "연도 (Year)", "저널명", "저널 SJR", "SJR 등급", "피인용 수", "논문 링크"]]
                     
                     st.dataframe(
                         df.style.applymap(color_sjr_score, subset=['저널 SJR']),
