@@ -66,17 +66,25 @@ else:
         with col1:
             author = st.text_input("저자 (선택 사항)", placeholder="예: Hinton G")
         with col2:
-            keyword = st.text_input("키워드 (필수)", placeholder="예: deep learning")
+            # '키워드' 라벨을 '선택 사항'으로 변경
+            keyword = st.text_input("키워드 (선택 사항)", placeholder="예: deep learning")
             
         num_results = st.slider("가져올 논문 수", min_value=5, max_value=50, value=10)
         submit_button = st.form_submit_button(label='검색 시작')
 
     # --- 검색 실행 및 결과 표시 ---
-    if submit_button and keyword:
-        # 저자명과 키워드를 조합하여 검색 쿼리 생성
-        query = keyword
+    # '저자' 또는 '키워드' 중 하나라도 입력되면 검색 실행
+    if submit_button and (author or keyword):
+        # --- 동적 쿼리 생성 로직 ---
+        query_parts = []
+        if keyword:
+            query_parts.append(keyword)
         if author:
-            query += f' author:"{author}"'
+            # scholarly 라이브러리 형식에 맞게 저자 쿼리 추가
+            query_parts.append(f'author:"{author}"')
+        # 리스트의 모든 요소를 공백으로 연결하여 최종 쿼리 생성
+        query = " ".join(query_parts)
+        # --- -------------------- ---
 
         with st.spinner(f"'{query}' 조건으로 논문을 검색 중입니다..."):
             try:
@@ -88,7 +96,6 @@ else:
                     bib = pub.get('bib', {})
                     venue = bib.get('venue', 'N/A')
                     
-                    # SJR 점수 조회
                     sjr_score = get_journal_info(venue, db_df, journal_names)
                     
                     results.append({
@@ -115,12 +122,13 @@ else:
                     st.download_button(
                         label="📄 결과 CSV 파일로 다운로드",
                         data=convert_df_to_csv(df),
-                        file_name=f'search_{keyword.replace(" ", "_")}.csv',
+                        file_name=f'search_{query.replace(" ", "_").replace(":", "")}.csv',
                         mime='text/csv'
                     )
 
             except Exception as e:
                 st.error(f"검색 중 오류가 발생했습니다: {e}")
 
-    elif submit_button and not keyword:
-        st.warning("키워드는 반드시 입력해야 합니다.")
+    # 둘 다 입력되지 않았을 경우의 경고 메시지
+    elif submit_button and not (author or keyword):
+        st.warning("저자 또는 키워드 중 하나 이상을 입력해야 합니다.")
