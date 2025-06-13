@@ -2,4 +2,5 @@ streamlit
 pandas
 scholarly
 openpyxl
-google-generativeai
+requests
+beautifulsoup4
