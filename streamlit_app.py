@@ -55,7 +55,6 @@ def get_if_from_gemini(journal_name: str):
         return text_response if len(text_response) < 15 else "AI 응답 없음"
 
     except Exception as e:
-        # API 호출 중 발생하는 오류 (잘못된 키, 사용량 초과 등)
         error_message = str(e)
         if "API key not valid" in error_message:
             return "잘못된 키"
@@ -75,7 +74,6 @@ if not api_configured:
     st.info("👈 시작하려면, 사이드바에 자신의 Google Gemini API 키를 입력해주세요.")
     st.image("https://i.imgur.com/3Z6n5pD.png", caption="사이드바에 API 키를 입력하는 곳이 있습니다.")
 
-# API 키가 설정된 경우에만 검색 폼과 안내 표시
 if api_configured:
     st.warning(
         "**[안내]** 이 앱은 **Google Gemini AI**를 사용하여 저널의 Impact Factor를 **실시간으로 추정**합니다. "
@@ -97,7 +95,7 @@ if api_configured:
                 
                 for i, pub in enumerate(search_query):
                     if i >= num_results: break
-                    time.sleep(1) # API Rate Limit 존중
+                    time.sleep(1)
                     
                     bib = pub.get('bib', {})
                     venue = bib.get('venue', 'N/A')
@@ -123,7 +121,14 @@ if api_configured:
                         df, use_container_width=True,
                         column_config={"논문 링크": st.column_config.LinkColumn("Link", display_text="🔗")},
                         hide_index=True)
-                    st.download_button("📄 결과 CSV 파일로 다운로드", convert_to_csv(df), f'ai_if_search_{keyword.replace(" ", "_")}.csv", 'text/csv')
+                    
+                    # --- 오타 수정된 부분 ---
+                    st.download_button(
+                        label="📄 결과 CSV 파일로 다운로드",
+                        data=convert_to_csv(df),
+                        file_name=f'ai_if_search_{keyword.replace(" ", "_")}.csv', # 따옴표 수정
+                        mime='text/csv'
+                    )
 
             except Exception as e:
                 st.error(f"검색 중 오류 발생: {e}")
