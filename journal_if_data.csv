@@ -166,7 +166,7 @@ Diabetes Care,9.631
 ACS Central Science,9.584
 Autophagy,9.554
 Diabetes,9.513
-Journal of Cachexia, Sarcopenia and Muscle,9.458
+"Journal of Cachexia, Sarcopenia and Muscle",9.458
 Arthritis and Rheumatology,9.445
 Progress in Retinal and Eye Research,9.408
 Brain,9.39
@@ -359,7 +359,7 @@ Neuroscience and Biobehavioral Reviews,6.302
 Progress in Neurobiology,6.296
 Trends in Neurosciences,6.29
 Annual Review of Neuroscience,6.284
-Brain, Behavior, and Immunity,6.278
+"Brain, Behavior, and Immunity",6.278
 Glia,6.272
 Journal of Comparative Neurology,6.266
 Journal of Neurochemistry,6.26
@@ -387,7 +387,7 @@ Drug and Alcohol Dependence,6.134
 Alcoholism: Clinical and Experimental Research,6.128
 Journal of Studies on Alcohol and Drugs,6.122
 Nicotine and Tobacco Research,6.116
-Substance Abuse Treatment, Prevention, and Policy,6.11
+"Substance Abuse Treatment, Prevention, and Policy",6.11
 Tobacco Control,6.104
 BMJ,6.098
 PLoS Medicine,6.092
@@ -403,7 +403,7 @@ Heart,6.038
 Journal of the American Heart Association,6.032
 Stroke,6.026
 Hypertension,6.02
-Arteriosclerosis, Thrombosis, and Vascular Biology,6.014
+"Arteriosclerosis, Thrombosis, and Vascular Biology",6.014
 Journal of Thrombosis and Haemostasis,6.008
 Blood,6.002
 Leukemia,5.996
@@ -420,7 +420,7 @@ Oncogene,5.936
 Molecular Cancer Research,5.93
 Cancer Letters,5.924
 Molecular Carcinogenesis,5.918
-Genes, Chromosomes and Cancer,5.912
+"Genes, Chromosomes and Cancer",5.912
 Neoplasia,5.906
 Cancer,5.9
 European Journal of Cancer,5.894
@@ -523,7 +523,7 @@ European Journal of Soil Science,5.318
 Catena,5.312
 Journal of Plant Nutrition and Soil Science,5.306
 Soil and Tillage Research,5.3
-Agriculture, Ecosystems and Environment,5.294
+"Agriculture, Ecosystems and Environment",5.294
 Field Crops Research,5.288
 European Journal of Agronomy,5.282
 Agronomy for Sustainable Development,5.276
@@ -541,12 +541,12 @@ The Plant Journal,5.21
 Annual Review of Plant Biology,5.204
 Trends in Plant Science,5.198
 New Phytologist,5.192
-Plant, Cell and Environment,5.186
+"Plant, Cell and Environment",5.186
 Functional Plant Biology,5.18
 Journal of Ecology,5.174
 Ecology Letters,5.168
 Ecology,5.162
-Annual Review of Ecology, Evolution, and Systematics,5.156
+"Annual Review of Ecology, Evolution, and Systematics",5.156
 Trends in Ecology and Evolution,5.15
 Global Change Biology,5.144
 Global Ecology and Biogeography,5.138
@@ -600,7 +600,7 @@ Annual Review of Microbiology,4.856
 Applied and Environmental Microbiology,4.85
 International Journal of Systematic and Evolutionary Microbiology,4.844
 Systematic and Applied Microbiology,4.838
-Antonie van Leeuwenhoek, Journal of Microbiology,4.832
+"Antonie van Leeuwenhoek, Journal of Microbiology",4.832
 Journal of Bacteriology,4.826
 Molecular Microbiology,4.82
 Environmental Microbiology,4.814
@@ -649,7 +649,7 @@ Antimicrobial Agents and Chemotherapy,4.562
 PLoS Pathogens,4.556
 mBio,4.55
 Cell Host and Microbe,4.544
-Infection, Genetics and Evolution,4.538
+"Infection, Genetics and Evolution",4.538
 Zoonoses and Public Health,4.532
 Transboundary and Emerging Diseases,4.526
 Preventive Veterinary Medicine,4.52
@@ -673,7 +673,7 @@ Veterinary Ophthalmology,4.418
 Veterinary Clinical Pathology,4.412
 Journal of Veterinary Diagnostic Investigation,4.406
 Journal of Comparative Pathology,4.4
-Comparative Immunology, Microbiology and Infectious Diseases,4.394
+"Comparative Immunology, Microbiology and Infectious Diseases",4.394
 Developmental Biology,4.388
 Mechanisms of Development,4.382
 Genesis,4.376
@@ -734,12 +734,12 @@ International Archives of Allergy and Immunology,4.052
 Journal of Allergy and Clinical Immunology,4.046
 Journal of Allergy and Clinical Immunology: In Practice,4.04
 Current Allergy and Asthma Reports,4.034
-Annals of Allergy, Asthma and Immunology,4.028
+"Annals of Allergy, Asthma and Immunology",4.028
 World Allergy Organization Journal,4.022
 Immunologic Research,4.016
 Frontiers in Immunology,4.01
 Journal for ImmunoTherapy of Cancer,4.004
-Cancer Immunology, Immunotherapy,3.998
+"Cancer Immunology, Immunotherapy",3.998
 OncoImmunology,3.992
 Clinical and Vaccine Immunology,3.986
 Vaccine,3.98
@@ -775,7 +775,7 @@ ACS Nano,3.806
 Nature Nanotechnology,3.8
 Nano Today,3.794
 Wiley Interdisciplinary Reviews: Nanomedicine and Nanobiotechnology,3.788
-Nanomedicine: Nanotechnology, Biology, and Medicine,3.782
+"Nanomedicine: Nanotechnology, Biology, and Medicine",3.782
 Nanomedicine,3.776
 Journal of Controlled Release,3.77
 Drug Delivery,3.764
@@ -813,7 +813,7 @@ Food Microbiology,3.578
 International Journal of Food Microbiology,3.572
 Foodborne Pathogens and Disease,3.566
 Journal of AOAC INTERNATIONAL,3.56
-Food Additives and Contaminants - Part A Chemistry, Analysis, Control, Exposure and Risk Assessment,3.554
+"Food Additives and Contaminants - Part A Chemistry, Analysis, Control, Exposure and Risk Assessment",3.554
 Food Analytical Methods,3.548
 Journal of Chromatography B: Analytical Technologies in the Biomedical and Life Sciences,3.542
 Journal of Chromatography A,3.536
@@ -822,7 +822,7 @@ Analytical Chemistry,3.524
 Analytica Chimica Acta,3.518
 Talanta,3.512
 Microchimica Acta,3.506
-Sensors and Actuators, B: Chemical,3.5
+"Sensors and Actuators, B: Chemical",3.5
 Biosensors and Bioelectronics,3.494
 The Analyst,3.488
 Analytical and Bioanalytical Chemistry,3.482
@@ -841,7 +841,7 @@ Proteomics - Clinical Applications,3.41
 Expert Review of Proteomics,3.404
 Metabolomics,3.398
 Journal of Proteomics,3.392
-Genomics, Proteomics and Bioinformatics,3.386
+"Genomics, Proteomics and Bioinformatics",3.386
 Bioinformatics,3.38
 PLoS Computational Biology,3.374
 BMC Bioinformatics,3.368
@@ -853,7 +853,7 @@ Journal of Chemical Information and Modeling,3.338
 Journal of Cheminformatics,3.332
 Journal of Molecular Graphics and Modelling,3.326
 Journal of Computer-Aided Molecular Design,3.32
-Proteins: Structure, Function and Bioinformatics,3.314
+"Proteins: Structure, Function and Bioinformatics",3.314
 Biophysical Journal,3.308
 Quarterly Reviews of Biophysics,3.302
 Annual Review of Biophysics,3.296
@@ -962,7 +962,7 @@ Applied Surface Science,2.684
 Surface Science Reports,2.678
 Surface and Coatings Technology,2.672
 Thin Solid Films,2.666
-Journal of Vacuum Science and Technology A: Vacuum, Surfaces and Films,2.66
+"Journal of Vacuum Science and Technology A: Vacuum, Surfaces and Films",2.66
 Journal of Vacuum Science and Technology B: Nanotechnology and Microelectronics,2.654
 Journal of Microelectromechanical Systems,2.648
 Lab on a Chip,2.642
@@ -976,7 +976,7 @@ IEEE Photonics Technology Letters,2.6
 Optica,2.594
 Journal of Lightwave Technology,2.588
 Journal of the Optical Society of America B: Optical Physics,2.582
-Journal of the Optical Society of America A: Optics and Image Science, and Vision,2.576
+"Journal of the Optical Society of America A: Optics and Image Science, and Vision",2.576
 Applied Optics,2.57
 Journal of Modern Optics,2.564
 Optics Communications,2.558
@@ -990,7 +990,7 @@ Acoustics,2.516
 Journal of the Acoustical Society of America,2.51
 Ultrasonics Sonochemistry,2.504
 Ultrasonics,2.498
-IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control,2.492
+"IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control",2.492
 IEEE Transactions on Medical Imaging,2.486
 Medical Image Analysis,2.48
 Physics in Medicine and Biology,2.474
