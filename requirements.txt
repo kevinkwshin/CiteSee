@@ -2,8 +2,4 @@ streamlit
 pandas
 scholarly
 openpyxl
-thefuzz
-python-levenshtein
 requests
-beautifulsoup4
-tqdm
