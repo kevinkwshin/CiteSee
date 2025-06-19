@@ -4,6 +4,7 @@ from scholarly import scholarly
 import io
 from thefuzz import process, fuzz
 import os
+import numpy as np # numpy 추가
 
 # --- 1. 페이지 설정 및 상수 정의 ---
 st.set_page_config(
@@ -13,15 +14,9 @@ st.set_page_config(
 )
 
 MAX_RESULTS_LIMIT = 200
-MATCH_SCORE_THRESHOLD = 95 # 저널명 매칭 임계값을 95로 상향 조정 (더 엄격한 매칭)
+MATCH_SCORE_THRESHOLD = 95 # 저널명 매칭 임계값
+TOP_JOURNAL_IF_THRESHOLD = 8.0 # Top 저널 IF 기준
 
-# 제공된 CSV의 journal_title 컬럼 값과 일치하도록 대문자로 변경
-TOP_JOURNALS = {
-    "NATURE", "SCIENCE", "CELL", "THE LANCET", "NEW ENGLAND JOURNAL OF MEDICINE",
-    "CA - A CANCER JOURNAL FOR CLINICIANS", "NATURE REVIEWS MOLECULAR CELL BIOLOGY",
-    "NATURE MEDICINE", "THE LANCET NEUROLOGY", "JAMA - JOURNAL OF THE AMERICAN MEDICAL ASSOCIATION"
-}
-# 제공된 CSV 파일명
 JOURNAL_DATA_FILE = 'journal_impact_data_20250619_153150.csv'
 
 # --- 2. 핵심 함수 (데이터 로딩, 매칭, 스타일링) ---
@@ -31,67 +26,76 @@ def load_journal_db(file_path=JOURNAL_DATA_FILE):
         return None, None
     try:
         df = pd.read_csv(file_path, encoding='utf-8-sig')
+        # 필수 컬럼 결측치 처리
         df.dropna(subset=['journal_title', 'impact_factor'], inplace=True)
-        # journal_title을 문자열로 명시적 변환 (혹시 모를 숫자형 저널명 방지)
-        df['journal_title'] = df['journal_title'].astype(str)
-        return df, df['journal_title'].tolist()
+
+        # journal_title을 대문자로 변환 및 문자열로 통일
+        df['journal_title'] = df['journal_title'].astype(str).str.upper()
+
+        # impact_factor 처리: '<0.1'을 0.05로, 그 외 숫자로 변환, 변환 불가 시 NaN
+        def convert_if(value):
+            if isinstance(value, str) and value.strip() == '<0.1':
+                return 0.05
+            try:
+                return float(value)
+            except ValueError:
+                return np.nan # 숫자로 변환할 수 없는 경우 NaN 처리
+
+        df['impact_factor'] = df['impact_factor'].apply(convert_if)
+        df.dropna(subset=['impact_factor'], inplace=True) # IF 변환 후 NaN이 된 행 제거
+
+        return df, df['journal_title'].tolist() # journal_names_list는 이제 모두 대문자
     except Exception as e:
         st.error(f"데이터 파일({file_path}) 로드 오류: {e}")
         return None, None
 
 @st.cache_data
-def get_journal_info(venue, db_df, journal_names_list):
-    if not venue or db_df is None or not journal_names_list:
-        return "N/A", "N/A", 0
+def get_journal_info(venue_from_scholar, db_df, journal_names_list_upper):
+    """
+    주어진 저널명(venue_from_scholar)을 DB와 매칭하여 Impact Factor 등의 정보를 반환합니다.
+    DB의 저널명 리스트(journal_names_list_upper)는 이미 대문자로 변환되어 있어야 합니다.
+    반환값: (impact_factor_float, matched_db_journal_name_upper, match_score)
+    매칭 실패 시: (np.nan, "DB 매칭 실패", score)
+    """
+    if not venue_from_scholar or db_df is None or not journal_names_list_upper:
+        return np.nan, "N/A", 0
 
-    # Google Scholar 저널명 전처리 (옵션): 양쪽 공백 제거, 소문자화
-    # 이는 DB의 journal_names_list도 동일하게 전처리되었을 때 효과적입니다.
-    # 여기서는 DB의 journal_title이 대부분 대문자이므로, venue도 대문자로 통일합니다.
-    processed_venue = str(venue).strip().upper()
-    if not processed_venue: # 전처리 후 빈 문자열이 되면 매칭 불가
-        return "N/A", "N/A", 0
+    processed_venue = str(venue_from_scholar).strip().upper() # Google Scholar 저널명도 대문자로
+    if not processed_venue:
+        return np.nan, "N/A", 0
 
-    # TheFuzz를 사용하여 가장 유사한 저널명 찾기
-    # journal_names_list는 이미 대문자 위주일 것이므로, processed_venue와 비교
-    match, score = process.extractOne(processed_venue, journal_names_list, scorer=fuzz.ratio) # scorer를 ratio로 변경 (단순 유사도)
+    # journal_names_list_upper (DB 저널명 리스트)는 이미 대문자
+    match_upper, score = process.extractOne(processed_venue, journal_names_list_upper, scorer=fuzz.ratio)
 
-    # 점수가 임계값 이상인 경우에만 정보 반환
     if score >= MATCH_SCORE_THRESHOLD:
-        # 찾은 match(DB의 저널명)를 사용하여 Impact Factor 조회
-        # db_df['journal_title']도 대문자로 일관성 있게 비교 (load_journal_db에서 이미 대문자로 통일했다면 필요 없음)
-        # 여기서는 journal_names_list가 db_df['journal_title']에서 왔으므로 match는 DB의 원본 형태를 가짐
-        impact_factor_series = db_df.loc[db_df['journal_title'] == match, 'impact_factor']
+        # match_upper (DB의 대문자 저널명)를 사용하여 Impact Factor 조회
+        impact_factor_series = db_df.loc[db_df['journal_title'] == match_upper, 'impact_factor']
         if not impact_factor_series.empty:
             impact_factor_value = impact_factor_series.iloc[0]
-            if isinstance(impact_factor_value, (int, float)):
-                return f"{impact_factor_value:.3f}", match, score
-            else: # '<0.1'과 같은 문자열 값 처리
-                return str(impact_factor_value), match, score
-        else: # 이론적으로는 extractOne이 journal_names_list에서 찾으므로 이 경우는 드물지만, 안전장치
-            return "N/A", "DB 조회 실패", score
+            # load_journal_db에서 이미 float으로 변환했으므로 바로 반환
+            return impact_factor_value, match_upper, score
+        else:
+            return np.nan, "DB 조회 오류", score
     else:
-        return "N/A", "매칭 실패", score
+        return np.nan, "DB 매칭 실패", score
 
-
-def classify_sjr(sjr_score_str):
-    if sjr_score_str == "N/A" or sjr_score_str == "<0.1":
+def classify_sjr(impact_factor_float): # 입력값을 float으로 가정
+    if pd.isna(impact_factor_float): # np.nan 또는 None인 경우
         return "N/A"
     try:
-        score = float(sjr_score_str)
+        score = float(impact_factor_float) # 이미 float일 수 있지만, 안전하게 변환
         if score >= 1.0: return "우수"
         elif 0.5 <= score < 1.0: return "양호"
         elif 0.2 <= score < 0.5: return "보통"
-        else: return "하위"
+        else: return "하위" # 0.05와 같은 값도 여기에 포함
     except (ValueError, TypeError):
         return "N/A"
 
-def color_sjr_score(val):
+def color_sjr_score(val_float): # 입력값을 float 또는 NaN으로 가정
+    if pd.isna(val_float):
+        return 'color: grey;'
     try:
-        if val == "<0.1":
-            score = 0.05
-        else:
-            score = float(val)
-
+        score = float(val_float)
         if score >= 1.0: color = 'green'
         elif 0.5 <= score < 1.0: color = 'blue'
         elif 0.2 <= score < 0.5: color = 'orange'
@@ -102,7 +106,12 @@ def color_sjr_score(val):
 
 @st.cache_data
 def convert_df_to_csv(df: pd.DataFrame):
-    return df.to_csv(index=False).encode('utf-8-sig')
+    # IF가 숫자가 아닌 경우 (예: NaN을 문자열 "N/A"로 바꾼 후)를 대비해 모든 값을 문자열로 변환 후 저장
+    df_copy = df.copy()
+    for col in df_copy.columns:
+        if df_copy[col].dtype == 'object': # 문자열로 변환된 숫자형 컬럼 등이 있을 수 있으므로 안전하게 처리
+            df_copy[col] = df_copy[col].astype(str)
+    return df_copy.to_csv(index=False).encode('utf-8-sig')
 
 
 # --- 3. UI 본문 구성 ---
@@ -110,10 +119,11 @@ st.title("📚 논문 검색 및 정보 다운로더")
 st.markdown(f"""
 Google Scholar에서 논문을 검색하고, Impact Factor를 함께 조회합니다. (최대 **{MAX_RESULTS_LIMIT}개**까지 표시)
 
-**저널명 매칭 정확도:** Google Scholar의 저널명과 내부 DB의 저널명 간 유사도 점수가 **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 Impact Factor를 표시합니다.
+**저널명 매칭 정확도:** Google Scholar의 저널명과 내부 DB의 저널명(모두 대문자로 변환 후 비교) 간 유사도 점수가 **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 Impact Factor를 표시합니다.
+**🏆 Top 저널 기준:** Impact Factor **{TOP_JOURNAL_IF_THRESHOLD}점 이상**인 저널.
 """)
 
-db_df, journal_names = load_journal_db()
+db_df, journal_names_upper = load_journal_db() # journal_names_upper는 대문자화된 리스트
 if db_df is None:
     st.error(f"⚠️ `{JOURNAL_DATA_FILE}` 파일을 찾을 수 없습니다. 앱과 동일한 폴더에 해당 파일이 있는지 확인해주세요.")
 else:
@@ -121,8 +131,8 @@ else:
 
     with st.expander("💡 결과 테이블 해석 가이드 보기"):
         st.markdown(f"""
-        - **🏆 Top 저널**: `{', '.join(list(TOP_JOURNALS)[:3])}` 등 세계 최상위 저널을 특별히 표시합니다. (DB에 해당 저널이 있고, 매칭된 경우)
-        - **매칭 점수**: Google Scholar의 저널명과 DB의 저널명 간의 유사도입니다. (현재 {MATCH_SCORE_THRESHOLD}% 이상 매칭)
+        - **🏆 Top 저널**: Impact Factor가 {TOP_JOURNAL_IF_THRESHOLD}점 이상인 경우 표시됩니다.
+        - **매칭 점수**: Google Scholar의 저널명과 DB의 저널명(모두 대문자화 후 비교) 간의 유사도입니다. ({MATCH_SCORE_THRESHOLD}% 이상일 때 DB 정보 표시)
         - **Impact Factor 등급**: 우수(IF >= 1.0), 양호(0.5 <= IF < 1.0), 보통(0.2 <= IF < 0.5), 하위(IF < 0.2)
         """)
 
@@ -154,27 +164,29 @@ else:
                         break
 
                     bib = pub.get('bib', {})
-                    venue = bib.get('venue', 'N/A')
+                    venue_from_scholar = bib.get('venue', 'N/A')
 
-                    if not isinstance(venue, str) or not venue.strip():
-                        impact_factor, matched_name, match_score = "N/A", "N/A", 0
-                    else:
-                        impact_factor, matched_name, match_score = get_journal_info(venue, db_df, journal_names)
+                    impact_factor_float, matched_db_journal_name_upper, match_score_val = get_journal_info(
+                        venue_from_scholar, db_df, journal_names_upper
+                    )
 
-                    if only_high_impact and impact_factor == "N/A":
+                    if only_high_impact and pd.isna(impact_factor_float):
                         continue
-
-                    top_journal_icon = "🏆" if matched_name in TOP_JOURNALS else ""
-
+                    
+                    # Top 저널 아이콘: IF가 숫자이고 기준점 이상일 때
+                    top_journal_icon = ""
+                    if not pd.isna(impact_factor_float) and impact_factor_float >= TOP_JOURNAL_IF_THRESHOLD:
+                        top_journal_icon = "🏆"
+                    
                     results.append({
                         "Top 저널": top_journal_icon,
                         "제목 (Title)": bib.get('title', 'N/A'),
                         "저자 (Authors)": ", ".join(bib.get('author', ['N/A'])),
                         "연도 (Year)": bib.get('pub_year', 'N/A'),
-                        "검색된 저널명 (축약)": venue,
-                        "매칭된 저널명 (DB)": matched_name,
-                        "매칭 점수 (%)": match_score if match_score > 0 else "N/A", # 0점은 N/A로 표시
-                        "Impact Factor": impact_factor,
+                        "저널명 (검색결과)": venue_from_scholar,
+                        "DB 저널명 (매칭시)": matched_db_journal_name_upper,
+                        "매칭 점수 (%)": match_score_val if match_score_val > 0 else "N/A",
+                        "Impact Factor": impact_factor_float if not pd.isna(impact_factor_float) else "N/A", # NaN이면 "N/A" 문자열로
                         "피인용 수": pub.get('num_citations', 0),
                         "논문 링크": pub.get('pub_url', '#'),
                     })
@@ -188,21 +200,33 @@ else:
                     st.subheader(subheader_text)
 
                     df_results = pd.DataFrame(results)
-                    df_results['IF 등급'] = df_results['Impact Factor'].apply(classify_sjr)
-                    df_results = df_results[[
+                    # 'Impact Factor' 컬럼이 문자열 "N/A"를 포함할 수 있으므로, 등급 분류 전에 숫자형으로 다시 시도
+                    # get_journal_info에서 이미 float 또는 np.nan으로 반환하므로, df_results['Impact Factor']를 바로 사용 가능
+                    df_results['IF 등급'] = df_results['Impact Factor'].apply(
+                        lambda x: classify_sjr(x) if x != "N/A" else "N/A"
+                    )
+                    
+                    # Impact Factor를 표시용 문자열로 변환 (소수점 3자리 또는 "N/A")
+                    df_display = df_results.copy()
+                    df_display['Impact Factor'] = df_display['Impact Factor'].apply(
+                        lambda x: f"{x:.3f}" if isinstance(x, float) and not pd.isna(x) and x != 0.05 else ("<0.1" if x==0.05 else "N/A")
+                    )
+
+
+                    df_display = df_display[[
                         "Top 저널", "제목 (Title)", "저자 (Authors)", "연도 (Year)",
-                        "매칭된 저널명 (DB)", "Impact Factor", "IF 등급",
-                        "피인용 수", "매칭 점수 (%)", "검색된 저널명 (축약)", "논문 링크"
+                        "저널명 (검색결과)", "DB 저널명 (매칭시)", "Impact Factor", "IF 등급",
+                        "피인용 수", "매칭 점수 (%)", "논문 링크"
                     ]]
 
                     st.dataframe(
-                        df_results.style.applymap(color_sjr_score, subset=['Impact Factor']),
+                        df_display.style.applymap(color_sjr_score, subset=['Impact Factor']),
                         use_container_width=True,
                         column_config={"논문 링크": st.column_config.LinkColumn("바로가기", display_text="🔗 Link")},
                         hide_index=True
                     )
 
-                    csv_data = convert_df_to_csv(df_results)
+                    csv_data = convert_df_to_csv(df_display) # 표시용 데이터프레임 사용
                     st.download_button(
                         label="📄 결과 CSV 파일로 다운로드",
                         data=csv_data,
