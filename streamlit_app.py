@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 MAX_RESULTS_LIMIT = 200
-MATCH_SCORE_THRESHOLD = 85 # 저널명 매칭 임계값
+MATCH_SCORE_THRESHOLD = 95 # 저널명 매칭 임계값을 95로 상향 조정 (더 엄격한 매칭)
 
 # 제공된 CSV의 journal_title 컬럼 값과 일치하도록 대문자로 변경
 TOP_JOURNALS = {
@@ -30,12 +30,10 @@ def load_journal_db(file_path=JOURNAL_DATA_FILE):
     if not os.path.exists(file_path):
         return None, None
     try:
-        # CSV 파일 읽기 시 encoding='utf-8-sig' 추가
         df = pd.read_csv(file_path, encoding='utf-8-sig')
-        # journal_title과 impact_factor 컬럼의 결측치 제거
         df.dropna(subset=['journal_title', 'impact_factor'], inplace=True)
-        # impact_factor를 숫자로 변환 시도, 변환 불가 시 N/A 또는 0으로 처리 (여기서는 일단 유지)
-        # 사용자가 제공한 CSV의 impact_factor 컬럼은 이미 숫자형이거나, pandas가 잘 처리할 것으로 예상
+        # journal_title을 문자열로 명시적 변환 (혹시 모를 숫자형 저널명 방지)
+        df['journal_title'] = df['journal_title'].astype(str)
         return df, df['journal_title'].tolist()
     except Exception as e:
         st.error(f"데이터 파일({file_path}) 로드 오류: {e}")
@@ -45,24 +43,38 @@ def load_journal_db(file_path=JOURNAL_DATA_FILE):
 def get_journal_info(venue, db_df, journal_names_list):
     if not venue or db_df is None or not journal_names_list:
         return "N/A", "N/A", 0
-    
-    # venue(검색된 저널명)도 대문자로 변환하여 매칭률 향상 (DB의 journal_title이 대문자 위주이므로)
-    match, score = process.extractOne(str(venue).upper(), journal_names_list, scorer=fuzz.token_sort_ratio)
-    
+
+    # Google Scholar 저널명 전처리 (옵션): 양쪽 공백 제거, 소문자화
+    # 이는 DB의 journal_names_list도 동일하게 전처리되었을 때 효과적입니다.
+    # 여기서는 DB의 journal_title이 대부분 대문자이므로, venue도 대문자로 통일합니다.
+    processed_venue = str(venue).strip().upper()
+    if not processed_venue: # 전처리 후 빈 문자열이 되면 매칭 불가
+        return "N/A", "N/A", 0
+
+    # TheFuzz를 사용하여 가장 유사한 저널명 찾기
+    # journal_names_list는 이미 대문자 위주일 것이므로, processed_venue와 비교
+    match, score = process.extractOne(processed_venue, journal_names_list, scorer=fuzz.ratio) # scorer를 ratio로 변경 (단순 유사도)
+
+    # 점수가 임계값 이상인 경우에만 정보 반환
     if score >= MATCH_SCORE_THRESHOLD:
-        # db_df에서 'journal_title'로 매칭된 행을 찾고, 'impact_factor' 값을 가져옴
-        impact_factor_value = db_df.loc[db_df['journal_title'] == match, 'impact_factor'].iloc[0]
-        # 숫자인 경우에만 .3f 포맷 적용
-        if isinstance(impact_factor_value, (int, float)):
-            return f"{impact_factor_value:.3f}", match, score
-        else: # <0.1 같은 문자열 값 처리
-            return str(impact_factor_value), match, score
-            
+        # 찾은 match(DB의 저널명)를 사용하여 Impact Factor 조회
+        # db_df['journal_title']도 대문자로 일관성 있게 비교 (load_journal_db에서 이미 대문자로 통일했다면 필요 없음)
+        # 여기서는 journal_names_list가 db_df['journal_title']에서 왔으므로 match는 DB의 원본 형태를 가짐
+        impact_factor_series = db_df.loc[db_df['journal_title'] == match, 'impact_factor']
+        if not impact_factor_series.empty:
+            impact_factor_value = impact_factor_series.iloc[0]
+            if isinstance(impact_factor_value, (int, float)):
+                return f"{impact_factor_value:.3f}", match, score
+            else: # '<0.1'과 같은 문자열 값 처리
+                return str(impact_factor_value), match, score
+        else: # 이론적으로는 extractOne이 journal_names_list에서 찾으므로 이 경우는 드물지만, 안전장치
+            return "N/A", "DB 조회 실패", score
     else:
         return "N/A", "매칭 실패", score
 
-def classify_sjr(sjr_score_str): # 함수명은 SJR로 되어있지만, 실제로는 Impact Factor를 사용
-    if sjr_score_str == "N/A" or sjr_score_str == "<0.1": # "<0.1"도 처리
+
+def classify_sjr(sjr_score_str):
+    if sjr_score_str == "N/A" or sjr_score_str == "<0.1":
         return "N/A"
     try:
         score = float(sjr_score_str)
@@ -73,13 +85,13 @@ def classify_sjr(sjr_score_str): # 함수명은 SJR로 되어있지만, 실제�
     except (ValueError, TypeError):
         return "N/A"
 
-def color_sjr_score(val): # 함수명은 SJR로 되어있지만, 실제로는 Impact Factor를 사용
+def color_sjr_score(val):
     try:
-        if val == "<0.1": # "<0.1" 특별 처리
-            score = 0.05 # 임의의 작은 값으로 처리하여 하위 등급 색상 적용
+        if val == "<0.1":
+            score = 0.05
         else:
             score = float(val)
-            
+
         if score >= 1.0: color = 'green'
         elif 0.5 <= score < 1.0: color = 'blue'
         elif 0.2 <= score < 0.5: color = 'orange'
@@ -95,20 +107,23 @@ def convert_df_to_csv(df: pd.DataFrame):
 
 # --- 3. UI 본문 구성 ---
 st.title("📚 논문 검색 및 정보 다운로더")
-st.markdown(f"Google Scholar에서 논문을 검색하고, Impact Factor를 함께 조회합니다. (최대 **{MAX_RESULTS_LIMIT}개**까지 표시)")
+st.markdown(f"""
+Google Scholar에서 논문을 검색하고, Impact Factor를 함께 조회합니다. (최대 **{MAX_RESULTS_LIMIT}개**까지 표시)
+
+**저널명 매칭 정확도:** Google Scholar의 저널명과 내부 DB의 저널명 간 유사도 점수가 **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 Impact Factor를 표시합니다.
+""")
 
 db_df, journal_names = load_journal_db()
 if db_df is None:
     st.error(f"⚠️ `{JOURNAL_DATA_FILE}` 파일을 찾을 수 없습니다. 앱과 동일한 폴더에 해당 파일이 있는지 확인해주세요.")
 else:
     st.success(f"✅ 총 {len(db_df):,}개의 저널 정보가 담긴 데이터베이스를 성공적으로 로드했습니다.")
-    
+
     with st.expander("💡 결과 테이블 해석 가이드 보기"):
         st.markdown(f"""
-        - **🏆 Top 저널**: `{', '.join(list(TOP_JOURNALS)[:3])}` 등 세계 최상위 저널을 특별히 표시합니다. (DB에 해당 저널이 있는 경우)
-        - **매칭 점수**: Google Scholar의 축약된 저널명과 DB의 전체 저널명 간의 유사도입니다.
-        - **{MATCH_SCORE_THRESHOLD}% 이상**일 경우에만 Impact Factor 점수를 표시하여 정확도를 높였습니다.
-        - Impact Factor 등급: 우수(>=1.0), 양호(0.5~0.999), 보통(0.2~0.499), 하위(<0.2)
+        - **🏆 Top 저널**: `{', '.join(list(TOP_JOURNALS)[:3])}` 등 세계 최상위 저널을 특별히 표시합니다. (DB에 해당 저널이 있고, 매칭된 경우)
+        - **매칭 점수**: Google Scholar의 저널명과 DB의 저널명 간의 유사도입니다. (현재 {MATCH_SCORE_THRESHOLD}% 이상 매칭)
+        - **Impact Factor 등급**: 우수(IF >= 1.0), 양호(0.5 <= IF < 1.0), 보통(0.2 <= IF < 0.5), 하위(IF < 0.2)
         """)
 
     with st.form(key='search_form'):
@@ -118,9 +133,9 @@ else:
             author = st.text_input("저자 (선택 사항)", placeholder="예: Hinton G")
         with col2:
             keyword = st.text_input("키워드 (선택 사항)", placeholder="예: deep learning")
-        
+
         only_high_impact = st.checkbox("Impact Factor 정보가 있는 저널만 찾기 (DB에서 매칭되는 저널만 표시)", value=True)
-        
+
         submit_button = st.form_submit_button(label='검색 시작')
 
     if submit_button and (author or keyword):
@@ -137,22 +152,20 @@ else:
                     if i >= MAX_RESULTS_LIMIT:
                         st.info(f"검색 결과가 많아 최대 {MAX_RESULTS_LIMIT}개까지만 표시합니다.")
                         break
-                    
+
                     bib = pub.get('bib', {})
-                    venue = bib.get('venue', 'N/A') # Google Scholar에서 가져온 저널명
-                    
-                    # venue가 유효한 문자열인지 확인 (간혹 비어있거나 None일 수 있음)
+                    venue = bib.get('venue', 'N/A')
+
                     if not isinstance(venue, str) or not venue.strip():
                         impact_factor, matched_name, match_score = "N/A", "N/A", 0
                     else:
                         impact_factor, matched_name, match_score = get_journal_info(venue, db_df, journal_names)
-                    
+
                     if only_high_impact and impact_factor == "N/A":
                         continue
-                    
-                    # TOP_JOURNALS 매칭 시 journal_title (matched_name) 사용
+
                     top_journal_icon = "🏆" if matched_name in TOP_JOURNALS else ""
-                    
+
                     results.append({
                         "Top 저널": top_journal_icon,
                         "제목 (Title)": bib.get('title', 'N/A'),
@@ -160,8 +173,8 @@ else:
                         "연도 (Year)": bib.get('pub_year', 'N/A'),
                         "검색된 저널명 (축약)": venue,
                         "매칭된 저널명 (DB)": matched_name,
-                        "매칭 점수 (%)": match_score,
-                        "Impact Factor": impact_factor, # 컬럼명 변경
+                        "매칭 점수 (%)": match_score if match_score > 0 else "N/A", # 0점은 N/A로 표시
+                        "Impact Factor": impact_factor,
                         "피인용 수": pub.get('num_citations', 0),
                         "논문 링크": pub.get('pub_url', '#'),
                     })
@@ -175,29 +188,29 @@ else:
                     st.subheader(subheader_text)
 
                     df_results = pd.DataFrame(results)
-                    df_results['IF 등급'] = df_results['Impact Factor'].apply(classify_sjr) # SJR -> IF
+                    df_results['IF 등급'] = df_results['Impact Factor'].apply(classify_sjr)
                     df_results = df_results[[
-                        "Top 저널", "제목 (Title)", "저자 (Authors)", "연도 (Year)", 
-                        "매칭된 저널명 (DB)", "Impact Factor", "IF 등급", 
+                        "Top 저널", "제목 (Title)", "저자 (Authors)", "연도 (Year)",
+                        "매칭된 저널명 (DB)", "Impact Factor", "IF 등급",
                         "피인용 수", "매칭 점수 (%)", "검색된 저널명 (축약)", "논문 링크"
                     ]]
-                    
+
                     st.dataframe(
-                        df_results.style.applymap(color_sjr_score, subset=['Impact Factor']), # SJR -> IF
+                        df_results.style.applymap(color_sjr_score, subset=['Impact Factor']),
                         use_container_width=True,
                         column_config={"논문 링크": st.column_config.LinkColumn("바로가기", display_text="🔗 Link")},
                         hide_index=True
                     )
-                    
-                    csv_data = convert_df_to_csv(df_results) # df -> df_results
+
+                    csv_data = convert_df_to_csv(df_results)
                     st.download_button(
                         label="📄 결과 CSV 파일로 다운로드",
-                        data=csv_data, # 변수 사용
+                        data=csv_data,
                         file_name=f'search_{query.replace(" ", "_").replace(":", "")}.csv',
                         mime='text/csv'
                     )
             except Exception as e:
                 st.error(f"검색 중 오류가 발생했습니다: {e}")
-                st.exception(e) # 더 자세한 에러 로깅
+                st.exception(e)
     elif submit_button and not (author or keyword):
         st.warning("저자 또는 키워드 중 하나 이상을 입력해야 합니다.")
